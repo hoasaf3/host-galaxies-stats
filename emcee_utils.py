@@ -2,6 +2,7 @@
 import emcee
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
 from statsmodels.distributions.empirical_distribution import ECDF
 
 from sample_nf_probability_density import sfrmin, sfrmax, mmin, mmax
@@ -12,29 +13,12 @@ NWALKERS = 32
 NSAMPLES_PER_Z = 1000
 
 
-def logpdf_wrapper(logpdf):
-    '''A logpdf wrapper to get arguments as array instead of 2 parameters - mass, sfr (used for emcee)
-        :logpdf: function that receives mass, sfr as 2 arguments: logpdf(mass, sfr)
-        :return: function that receives an array: log_wrapper(logpdf)([mass, sfr])
-        Usage:
-        wrapped_logpdf = wrap_logpdf(logpdf)
-        sampler = emcee.EnsembleSampler(NWALKERS, NDIM, wrapped_logpdf)
-    '''
-    def logpdf_with_array_args(x):
-        return logpdf(x[0], x[1])
-    return logpdf_with_array_args
-
-
-def get_samples(logpdf, p0=None, steps=5000, logpdf_args_as_array=True):
+def get_samples(logpdf, p0=None, steps=5000,):
     '''Get samples from a sampler with a given logpdf
     :p0: Initial state for walkers
-    :logpdf_args_as_array: bool. If True, logpdf can be called with logpdf([mass, sfr]). False means 
-    it should be called with logpdf(mass, sfr)
     '''
     if not p0:
         p0 = np.random.rand(NWALKERS, NDIM)  * np.array(((10-9), (0-(-1)))) + np.array((10, -0.5))
-    if not logpdf_args_as_array:
-        logpdf = logpdf_wrapper(logpdf)
     sampler = emcee.EnsembleSampler(NWALKERS, NDIM, logpdf)
     state = sampler.run_mcmc(p0, 100) # burn in
     sampler.reset()
@@ -57,7 +41,7 @@ def get_weighted_samples(z_to_logpdf, host_galaxies, nsamples_per_z=1000):
     
     for i,z in enumerate(host_galaxies['z']):
         logpdf = z_to_logpdf[z]
-        samples_per_z = get_samples(logpdf, steps=nsamples_per_z, logpdf_args_as_array=False)
+        samples_per_z = get_samples(logpdf, steps=nsamples_per_z)
 
         # add a column with z
         samples_per_z = np.append(samples_per_z, np.ones((samples_per_z.shape[0],1)) * z, 1)
@@ -73,23 +57,23 @@ def calc_weighted_likelihood(z_to_logpdf, values):
     :values: list of (log10(mass), log10(sfr), redshift)
     :return: the likelihood of values - sum(log(p(m_i,sfr_i,z_i))) for m_i,sfr_i,z_i in values
     '''
-    smart_likelihood = 0
+    weighted_likelihood = 0
     for mass, sfr, z in values:
         logpdf = z_to_logpdf[z]
-        if type(logpdf(mass, sfr)) == float:
-            print(logpdf(mass,sfr), mass, sfr, z)
+        p = logpdf([mass, sfr])
+        if type(p) == float:  # should be a list
+            print(p, mass, sfr, z)
             print('probably received mass/sfr out of bounds ({} - {}/{} - {})'.format(mmin, mmax, sfrmin, sfrmax))
-        smart_likelihood += logpdf(mass, sfr)[0]
-    return smart_likelihood
+        weighted_likelihood += p[0]
+    return weighted_likelihood
 
 
-def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies, weight_eq_text, plot=True):
+def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies, plot=True):
     '''
     Calculate p-nominal value of given samples,
     :samples: array of all samples with shape (number of host galaxies, NSAMPLES_PER_Z * NWALKERS, 3)
               each sample has 3 dimensiosn - mass, sfr, z
     :z_to_logpdf: dict redshift -> logpdf function
-    :weight_eq_text: Used for title of graph. For example: "ln(p * (0.2M + 0.8SFFR) )"
     :plot: if True, plots the cummulative probability graph
     
     :return: the probability of a a random set having lower weighted likelihood than the weighted likelihood of the given samples.
@@ -102,19 +86,19 @@ def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies, weight_eq_text, pl
     print('Likelihood of FRBs: ', frb_weighted_likelihood)
     choices = [samples[:,i,:] for i in range(samples.shape[1])] # list of (ngalaxies,3) arrays
     
-    # calc smart likelihood for each tuple of 18 samples
-    print("Calculating smart likelihood of samples...")
-    smart_likelihood = np.array([calc_weighted_likelihood(z_to_logpdf, c) for c in choices])
+    # calc weighted likelihood for each tuple len(host_galaxies) samples
+    print("Calculating weighted likelihood of samples...")
+    weighted_likelihood = np.array([calc_weighted_likelihood(z_to_logpdf, c) for c in choices])
 
-    ecdf_smart_lklhd = ECDF(smart_likelihood)
-    p_value = ecdf_smart_lklhd(frb_weighted_likelihood)
+    ecdf_weighted_lklhd = ECDF(weighted_likelihood)
+    p_value = ecdf_weighted_lklhd(frb_weighted_likelihood)
     print("P<frb_likelihood: %.4f" % (p_value,))
     
     if plot:
-        xmin = np.min(smart_likelihood)
-        xmax = np.max(smart_likelihood)
+        xmin = np.min(weighted_likelihood)
+        xmax = np.max(weighted_likelihood)
         x = np.linspace(xmin, xmax, 1000)
-        plt.plot(x, ecdf_smart_lklhd(x), color='purple')
+        plt.plot(x, ecdf_weighted_lklhd(x), color='purple')
         plt.yscale('log', nonpositive='clip')
         ax = plt.gca()
         plt.axvline(frb_weighted_likelihood, color='red', linestyle='--')
@@ -126,5 +110,56 @@ def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies, weight_eq_text, pl
                   loc='upper left')
         plt.text(0.1, 0.5, "P<frb_likelihood: %.4f" % (p_value,),
                 verticalalignment='bottom', horizontalalignment='left', transform = ax.transAxes)
-        #plt.savefig('Figures/frb_samples_cdf.pdf', transparent=True, bbox_inches='tight')  
     return p_value
+
+
+def plot_from_samples(samples):
+    """Plot density distribution of MCMC samples using Gaussian KDE.
+    
+    Creates a 2D density plot of mass-SFR samples using Gaussian kernel 
+    density estimation. The plot shows the probability density of the samples
+    with a color gradient.
+
+    Parameters
+    ----------
+    samples : numpy.ndarray
+        Array of shape (n_samples, 2) containing the MCMC samples.
+        First column should be masses, second column SFRs.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The matplotlib axes object containing the plot for further customization.
+
+    Notes
+    -----
+    - Uses gaussian_kde from scipy.stats for density estimation
+    - Color scheme uses gist_earth_r colormap
+    - Plot is oriented with mass on x-axis and SFR on y-axis
+    - Density is estimated on a 100x100 grid
+    
+    Example
+    -------
+    >>> samples = get_mcmc_samples()  # Shape (1000, 2)
+    >>> ax = plot_from_samples(samples)
+    >>> ax.set_xlabel('log Mass')
+    >>> plt.show()
+    """
+    m1 = samples[:,0]  # masses
+    m2 = samples[:,1]  # SFRs
+
+    xmin = m1.min()
+    xmax = m1.max()
+    ymin = m2.min()
+    ymax = m2.max()
+
+    X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+    positions = np.vstack([X.ravel(), Y.ravel()])
+    values = np.vstack([m1, m2])
+    kernel = gaussian_kde(values)
+    Z = np.reshape(kernel(positions).T, X.shape)
+
+    _, ax = plt.subplots()
+    ax.imshow(np.rot90(Z), cmap=plt.cm.gist_earth_r,
+              extent=[xmin, xmax, ymin, ymax], animated=True)
+    return ax
