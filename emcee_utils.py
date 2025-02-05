@@ -1,12 +1,15 @@
 ''' emcee utils '''
 import emcee
+import random
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from scipy.stats import gaussian_kde
 from statsmodels.distributions.empirical_distribution import ECDF
 
+import logpdfs
 from sample_nf_probability_density import sfrmin, sfrmax, mmin, mmax
-
+from helpers import gen_values_w_halfnorms
 
 NDIM = 2
 NWALKERS = 32
@@ -29,7 +32,7 @@ def get_samples(logpdf, p0=None, steps=5000,):
     return samples
 
 
-def get_weighted_samples(z_to_logpdf, host_galaxies, nsamples_per_z=1000):
+def get_weighted_samples(host_galaxies, z_to_logpdf, nsamples_per_z=1000):
     '''
     :param z_to_logpdf: dict of z->logdpf function, to generate samples
     :return: array of all samples - shape is (nfiltered, NSAMPLES_PER_Z * NWALKERS, 3)
@@ -39,16 +42,20 @@ def get_weighted_samples(z_to_logpdf, host_galaxies, nsamples_per_z=1000):
     # create empty array to fill samples for each redshift
     all_samples = np.empty((len(host_galaxies), nsamples_per_z * NWALKERS, 3)) # each sample has 3 dimensions - mass,sfr,z
     
-    for i,z in enumerate(host_galaxies['z']):
+    #for i,z in enumerate(host_galaxies['z']):
+    for i, z in tqdm(enumerate(host_galaxies['z']), 
+                    total=len(host_galaxies['z']),
+                    desc="Generating samples for each redshift",
+                    unit="hosts"):
+
         logpdf = z_to_logpdf[z]
         samples_per_z = get_samples(logpdf, steps=nsamples_per_z)
-
+        
         # add a column with z
-        samples_per_z = np.append(samples_per_z, np.ones((samples_per_z.shape[0],1)) * z, 1)
+        samples_per_z = np.append(samples_per_z,
+                                  np.ones((samples_per_z.shape[0], 1)) * z, 1)
         all_samples[i] = samples_per_z
     return all_samples
-
-
 
 
 def calc_weighted_likelihood(z_to_logpdf, values):
@@ -68,13 +75,12 @@ def calc_weighted_likelihood(z_to_logpdf, values):
     return weighted_likelihood
 
 
-def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies, plot=True):
+def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies):
     '''
     Calculate p-nominal value of given samples,
     :samples: array of all samples with shape (number of host galaxies, NSAMPLES_PER_Z * NWALKERS, 3)
               each sample has 3 dimensiosn - mass, sfr, z
     :z_to_logpdf: dict redshift -> logpdf function
-    :plot: if True, plots the cummulative probability graph
     
     :return: the probability of a a random set having lower weighted likelihood than the weighted likelihood of the given samples.
     '''
@@ -87,29 +93,11 @@ def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies, plot=True):
     choices = [samples[:,i,:] for i in range(samples.shape[1])] # list of (ngalaxies,3) arrays
     
     # calc weighted likelihood for each tuple len(host_galaxies) samples
-    print("Calculating weighted likelihood of samples...")
     weighted_likelihood = np.array([calc_weighted_likelihood(z_to_logpdf, c) for c in choices])
 
     ecdf_weighted_lklhd = ECDF(weighted_likelihood)
     p_value = ecdf_weighted_lklhd(frb_weighted_likelihood)
-    print("P<frb_likelihood: %.4f" % (p_value,))
-    
-    if plot:
-        xmin = np.min(weighted_likelihood)
-        xmax = np.max(weighted_likelihood)
-        x = np.linspace(xmin, xmax, 1000)
-        plt.plot(x, ecdf_weighted_lklhd(x), color='purple')
-        plt.yscale('log', nonpositive='clip')
-        ax = plt.gca()
-        plt.axvline(frb_weighted_likelihood, color='red', linestyle='--')
 
-        plt.title("%s of %s galaxies based on 10k samples" % (weight_eq_text, len(host_galaxies)))
-        plt.xlabel('Likelihood [unitless]', fontsize=16)
-        plt.ylabel('Probability [unitless]', fontsize=16)
-        plt.legend(['Cummulative distribution of MCMC samples', 'FRB likelihood'],
-                  loc='upper left')
-        plt.text(0.1, 0.5, "P<frb_likelihood: %.4f" % (p_value,),
-                verticalalignment='bottom', horizontalalignment='left', transform = ax.transAxes)
     return p_value
 
 
@@ -163,3 +151,69 @@ def plot_from_samples(samples):
     ax.imshow(np.rot90(Z), cmap=plt.cm.gist_earth_r,
               extent=[xmin, xmax, ymin, ymax], animated=True)
     return ax
+
+
+def calc_weighted_pnom(host_galaxies, prob_density, a, b):
+    z_to_logpdf = logpdfs.create_z_to_logpdf(host_galaxies, prob_density, a, b)
+    print('Generating samples for a =', a, 'b =', b, '...')
+    samples = get_weighted_samples(host_galaxies, z_to_logpdf)
+    p_value = calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies)
+    return p_value
+
+
+def calc_p90(host_galaxies, z_to_logpdf, nominal_likelihood=None, n_vals=10000):
+    '''
+    Calculate the p<90% confidence and p nominal
+    :param n_vals: number of values to generate for mass, sfr per host
+
+    :nominal_likelihood: float, the nominal likelihood of transients. For example:
+        frbs_likelihood = calc_weighted_likelihood(z_to_logpdf, frb_values.T)
+        If not provided, p_nom will return as
+    :return: Tuple of (p90, p_nom, cdf of likelihoods, frbs_likelihood_cdf)
+    '''
+    samples = get_weighted_samples(host_galaxies, z_to_logpdf)
+    
+    # list of (n_hosts, 3) arrays - list of (mass, sfr, z) for every host
+    emcee_values = [samples[:,i,:] for i in range(samples.shape[1])]
+    
+    weighted_likelihoods = np.array([calc_weighted_likelihood(z_to_logpdf, v)
+                                     for v in emcee_values])
+    weighted_likelihood_cdf = ECDF(weighted_likelihoods)
+
+    mass_values = gen_values_w_halfnorms(host_galaxies, val_key='Mstar',
+                                         lowerr_key='Mstar_lowerr',
+                                         uperr_key='Mstar_uperr',
+                                         n_vals=n_vals)
+    
+    sfr_values = gen_values_w_halfnorms(host_galaxies, val_key='SFR',
+                                        lowerr_key='SFR_lowerr',
+                                        uperr_key='SFR_uperr',
+                                        n_vals=n_vals)
+    
+    hosts_likelihoods = []
+
+    for _ in tqdm(range(n_vals),
+                  desc="Calculating likelihoods based on halfnorms values"):
+        
+        random_values = []
+        for i in host_galaxies.index:
+            mass = np.log10(random.choice(mass_values[i]))
+            with np.errstate(invalid='ignore'):
+                sfr = np.log10(random.choice(sfr_values[i]))
+                while np.isnan(sfr) or sfr < sfrmin or sfr > sfrmax:
+                    # retry if sfr_values[i]<0 or sfr not within plot range
+                    sfr = np.log10(random.choice(sfr_values[i]))
+                
+            z = host_galaxies['z'][i]
+            random_values.append([mass, sfr, z])
+        
+        hosts_likelihoods.append(calc_weighted_likelihood(z_to_logpdf, random_values))
+    hosts_likelihood_cdf = ECDF(hosts_likelihoods)
+    ninetieth_conf = np.percentile(hosts_likelihood_cdf.x, [90])[0]
+    
+    p_90 = weighted_likelihood_cdf(ninetieth_conf)
+    p_nom = None
+    if nominal_likelihood is not None:
+        p_nom = weighted_likelihood_cdf(nominal_likelihood)
+    
+    return p_90, p_nom, weighted_likelihood_cdf, hosts_likelihood_cdf

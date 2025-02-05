@@ -67,7 +67,7 @@ def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget,
         return prior + likelihood
 
 
-def get_logpdf(ztarget, prob_density, continuity=False):
+def get_logpdf(ztarget, prob_density, continuity=True):
     """
     Return a log-posterior function for a given redshift and probability density.
     Supports optional continuity model.
@@ -93,18 +93,18 @@ def get_logpdf(ztarget, prob_density, continuity=False):
     return logposterior_function
 
 
-def get_weighted_logpdf(simple_logpdf, a, b):
+def get_weighted_logpdf(logpdf, a, b):
     ''' Wrapper for a simple logpdf function that returns weighted likelihood function
-    :simple_logpdf: the logpdf fucntion (density of mass, sfr)
+    :logpdf: the logpdf fucntion (density of mass, sfr)
     :a: coefficient for mass
     :b: coefficient for sfr
     :return a function f([m, sfr]) -> ln(p * (a*m+b*sfr) )
     '''
     def weighted_logpdf(theta):
         m, sfr = theta
-        if np.isinf(simple_logpdf(theta)):
+        if np.isinf(logpdf(theta)):
             return -np.inf
-        return np.log(np.exp(simple_logpdf(theta)) * (a* 10**m + b * 10**sfr))
+        return np.log(np.exp(logpdf(theta)) * (a* 10**m + b * 10**sfr))
     return weighted_logpdf
 
 
@@ -113,12 +113,14 @@ def slope(z):
     return 0.9387 + 0.004599*z - 0.02751*z**2
 
 
-def create_z_to_logpdf(a, b, host_galaxies, prob_density):
+def create_z_to_logpdf(host_galaxies, prob_density, a, b):
     ''' create map of redshift to weighted logpdf function
     :a: coefficient for mass
     :b: coefficient for sfr
     '''
-    z_to_logpdf = {z: get_weighted_logpdf(get_logpdf(z, prob_density), a, b)
-                      for z in host_galaxies['z']} 
-    return z_to_logpdf
+    z_to_logpdf = {z: 
+                   get_weighted_logpdf(
+                       get_logpdf(z, prob_density), a, b)
+                   for z in host_galaxies['z']} 
+    return z_to_logpdf    
 
