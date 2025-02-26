@@ -1,5 +1,4 @@
 import numpy as np
-from tqdm import tqdm
 import scipy.stats as stats
  
  
@@ -14,8 +13,7 @@ def gen_values_w_halfnorms(host_galaxies, val_key, lowerr_key, uperr_key, n_vals
     '''
     sfr_values = np.ndarray((len(host_galaxies), n_vals))
 
-    for i in tqdm(host_galaxies.index,
-                  desc=f"Generating {val_key} values with halfnorms"):
+    for i in host_galaxies.index:
         left_scale, right_scale = host_galaxies[lowerr_key][i], host_galaxies[uperr_key][i]  
         mu = host_galaxies[val_key][i]
 

@@ -15,6 +15,9 @@ NDIM = 2
 NWALKERS = 32
 NSAMPLES_PER_Z = 1000
 
+# Flag for disabling tqdm
+TQDM_DISABLE = False
+
 
 def get_samples(logpdf, p0=None, steps=5000,):
     '''Get samples from a sampler with a given logpdf
@@ -46,7 +49,8 @@ def get_weighted_samples(host_galaxies, z_to_logpdf, nsamples_per_z=1000):
     for i, z in tqdm(enumerate(host_galaxies['z']), 
                     total=len(host_galaxies['z']),
                     desc="Generating samples for each redshift",
-                    unit="hosts"):
+                    unit="hosts",
+                    disable=TQDM_DISABLE):
 
         logpdf = z_to_logpdf[z]
         samples_per_z = get_samples(logpdf, steps=nsamples_per_z)
@@ -118,6 +122,9 @@ def plot_from_samples(samples):
     -------
     matplotlib.axes.Axes
         The matplotlib axes object containing the plot for further customization.
+    numpy.ndarray
+        The 2D kernel density estimate array (shape: 100x100) representing
+        the probability density at each point in the mass-SFR grid.
 
     Notes
     -----
@@ -128,8 +135,8 @@ def plot_from_samples(samples):
     
     Example
     -------
-    >>> samples = get_mcmc_samples()  # Shape (1000, 2)
-    >>> ax = plot_from_samples(samples)
+    >>> samples = get_samples()  # Shape (1000, 2)
+    >>> ax, density = plot_from_samples(samples)
     >>> ax.set_xlabel('log Mass')
     >>> plt.show()
     """
@@ -140,17 +147,18 @@ def plot_from_samples(samples):
     xmax = m1.max()
     ymin = m2.min()
     ymax = m2.max()
+    extent = [xmin, xmax, ymin, ymax]
 
     X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
-    positions = np.vstack([X.ravel(), Y.ravel()])
-    values = np.vstack([m1, m2])
+    positions = np.vstack([X.ravel(), Y.ravel()])  # 2x10000
+    values = np.vstack([m1, m2]) # 2xN_samples
     kernel = gaussian_kde(values)
-    Z = np.reshape(kernel(positions).T, X.shape)
+    Z = np.reshape(kernel(positions).T, X.shape)  # 100x100
 
     _, ax = plt.subplots()
     ax.imshow(np.rot90(Z), cmap=plt.cm.gist_earth_r,
-              extent=[xmin, xmax, ymin, ymax], animated=True)
-    return ax
+              extent=extent, animated=True)
+    return ax, Z, extent
 
 
 def calc_weighted_pnom(host_galaxies, prob_density, a, b):
@@ -192,8 +200,7 @@ def calc_p90(host_galaxies, z_to_logpdf, nominal_likelihood=None, n_vals=10000):
     
     hosts_likelihoods = []
 
-    for _ in tqdm(range(n_vals),
-                  desc="Calculating likelihoods based on halfnorms values"):
+    for _ in range(n_vals):
         
         random_values = []
         for i in host_galaxies.index:
