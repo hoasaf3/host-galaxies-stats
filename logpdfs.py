@@ -10,12 +10,21 @@ logphi = schechter.log_schechter
 
 
 def lnprior(mass, sfr, mthreshold):
-    """
-    Apply prior constraints on mass and sfr.
-    Returns -inf if the parameters are out of bounds, otherwise 0.
-    :param mass: float, the mass parameter.
-    :param sfr: float, the star formation rate parameter.
-    :param mthreshold: float, the mass threshold for the given redshift.
+    """Apply prior constraints on mass and SFR.
+
+    Parameters
+    ----------
+    mass : float
+        Galaxy stellar mass in log10(M_solar)
+    sfr : float
+        Star formation rate in log10(M_solar/yr)
+    mthreshold : float
+        Mass threshold at given redshift
+
+    Returns
+    -------
+    float
+        0 if parameters within bounds, -inf otherwise
     """
     if not mthreshold < mass < snpd.mmax or not snpd.sfrmin < sfr < snpd.sfrmax:
         return -np.inf
@@ -23,12 +32,28 @@ def lnprior(mass, sfr, mthreshold):
 
 
 def lnprior_continuity(mass, sfr, mthreshold, ztarget):
-    """
-    Apply continuity model prior on mass and sfr, accounting for redshift-specific slope.
-    :param mass: float, the mass parameter.
-    :param sfr: float, the star formation rate parameter.
-    :param mthreshold: float, the mass threshold for the given redshift.
-    :param ztarget: float, the target redshift for determining the slope.
+    """Apply continuity model prior on mass and SFR.
+    
+    Accounts for redshift-specific slope and applies Schechter function
+    correction below mass threshold.
+
+    Parameters
+    ----------
+    mass : float
+        Galaxy stellar mass in log10(M_solar)
+    sfr : float
+        Star formation rate in log10(M_solar/yr)
+    mthreshold : float
+        Mass threshold at given redshift
+    ztarget : float
+        Target redshift for determining slope
+
+    Returns
+    -------
+    tuple
+        (prior_value, corrected_sfr)
+        prior_value: float, log prior probability
+        corrected_sfr: float, SFR after continuity correction
     """
     if not snpd.mmin < mass < snpd.mmax or not snpd.sfrmin < sfr < snpd.sfrmax:
         return -np.inf, sfr
@@ -39,17 +64,28 @@ def lnprior_continuity(mass, sfr, mthreshold, ztarget):
     return 0, sfr
 
 
-def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget,
-                continuity=False):
-    """
-    Compute the total log-posterior (lnprior + lnlikelihood).
-    Supports optional continuity model prior.
-    :param mass: float, the mass parameter.
-    :param sfr: float, the star formation rate parameter.
-    :param logpdf_interpolator: callable, interpolates log-likelihood.
-    :param mthreshold: float, the mass threshold for the given redshift.
-    :param ztarget: float, the target redshift for continuity model.
-    :param continuity: bool, whether to use continuity model prior.
+def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget, continuity=False):
+    """Compute total log-posterior (lnprior + lnlikelihood).
+
+    Parameters
+    ----------
+    mass : float
+        Galaxy stellar mass in log10(M_solar)
+    sfr : float
+        Star formation rate in log10(M_solar/yr)
+    logpdf_interpolator : callable
+        Interpolation function for log probability density
+    mthreshold : float
+        Mass threshold at given redshift
+    ztarget : float
+        Target redshift
+    continuity : bool, optional
+        Whether to apply continuity model, by default False
+
+    Returns
+    -------
+    float
+        Log posterior probability
     """
     if continuity:
         prior, sfr_corrected = lnprior_continuity(mass, sfr, mthreshold, ztarget)
@@ -71,10 +107,27 @@ def get_logpdf(ztarget, prob_density, continuity=True):
     """
     Return a log-posterior function for a given redshift and probability density.
     Supports optional continuity model.
-    :param ztarget: float, the target redshift.
-    :param prob_density: 3D array, the probability density over mass, sfr, and
-                         redshift. Obtained from snpd.sample_density
-    :param continuity: bool, whether to include continuity model prior.
+    Parameters:
+    ----------
+    ztarget (float): The target redshift.
+    prob_density (numpy.ndarray): 3D array representing the probability density over mass, SFR, and redshift.
+                                    Obtained from snpd.sample_density.
+    continuity (bool, optional): Whether to include continuity model prior. Default is True.
+
+    Returns:
+    ----------
+    function: A log-posterior function that takes a tuple (mass, sfr) as input and returns the log-posterior value.
+
+    Notes:
+    ----------
+    - The function uses a minimum redshift value of 0.25 for calculations.
+    - The log-posterior function is created using a RectBivariateSpline interpolator over the mass and SFR grids.
+    - The mass completeness threshold is determined using snpd.cosmos15_mass_completeness.
+
+    Example:
+    ----------
+    >>> logpdf_func = get_logpdf(0.5, prob_density)
+    >>> logpdf_value = logpdf_func((10.5, 1.0))
     """
     z_for_leja = ztarget if ztarget > 0.25 else 0.25
     zidx = np.abs(snpd.zgrid - z_for_leja).argmin()
@@ -94,12 +147,28 @@ def get_logpdf(ztarget, prob_density, continuity=True):
 
 
 def get_weighted_logpdf(logpdf, a, b):
-    ''' Wrapper for a simple logpdf function that returns weighted likelihood function
-    :logpdf: the logpdf fucntion (density of mass, sfr)
-    :a: coefficient for mass
-    :b: coefficient for sfr
-    :return a function f([m, sfr]) -> ln(p * (a*m+b*sfr) )
-    '''
+    """Create weighted logpdf function combining mass and SFR terms.
+    
+    Parameters
+    ----------
+    logpdf : callable
+        Base log probability density function
+    a : float
+        Mass weighting coefficient
+    b : float
+        SFR weighting coefficient
+    
+    Returns
+    -------
+    callable
+        Weighted logpdf function that returns ln(p * (a*m + b*sfr))
+        where p is the original probability density
+    
+    Notes
+    -----
+    Input masses and SFRs should be in log10 scale
+    Returns -inf for invalid parameter combinations
+    """
     def weighted_logpdf(theta):
         m, sfr = theta
         if np.isinf(logpdf(theta)):
@@ -109,18 +178,48 @@ def get_weighted_logpdf(logpdf, a, b):
 
 
 def slope(z):
-    ''' Calc the slope star forming main sequence from Leja 2020'''
+    """Calculate star-forming main sequence slope from Leja 2020.
+    
+    Parameters
+    ----------
+    z : float
+        Redshift
+    
+    Returns
+    -------
+    float
+        SFMS slope at given redshift using quadratic fit:
+        0.9387 + 0.004599*z - 0.02751*z^2
+    
+    References
+    ----------
+    Leja et al. 2020
+    """
     return 0.9387 + 0.004599*z - 0.02751*z**2
 
 
 def create_z_to_logpdf(host_galaxies, prob_density, a, b):
-    ''' create map of redshift to weighted logpdf function
-    :a: coefficient for mass
-    :b: coefficient for sfr
-    '''
+    """Create mapping from redshift to weighted log PDF functions.
+    
+    Parameters
+    ----------
+    host_galaxies : pandas.DataFrame
+        Host galaxy data containing 'z' column
+    prob_density : callable
+        Base probability density function
+    a : float
+        Mass weighting coefficient
+    b : float
+        SFR weighting coefficient
+    
+    Returns
+    -------
+    dict
+        Maps redshift to corresponding weighted log PDF functions
+    """
     z_to_logpdf = {z: 
                    get_weighted_logpdf(
                        get_logpdf(z, prob_density), a, b)
                    for z in host_galaxies['z']} 
-    return z_to_logpdf    
+    return z_to_logpdf
 

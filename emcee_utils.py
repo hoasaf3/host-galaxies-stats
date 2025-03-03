@@ -11,18 +11,35 @@ import logpdfs
 from sample_nf_probability_density import sfrmin, sfrmax, mmin, mmax
 from helpers import gen_values_w_halfnorms
 
-NDIM = 2
-NWALKERS = 32
-NSAMPLES_PER_Z = 1000
+# Global variables for MCMC sampling
+NDIM = 2  # Dimension of parameter space (mass, SFR)
+NWALKERS = 32  # Number of MCMC walkers
+NSAMPLES_PER_Z = 1000  # Samples per redshift
+TQDM_DISABLE = False  # Flaf for disabling tqdm
 
-# Flag for disabling tqdm
-TQDM_DISABLE = False
 
+def get_samples(logpdf, p0=None, steps=5000):
+    """Generate MCMC samples using emcee sampler.
 
-def get_samples(logpdf, p0=None, steps=5000,):
-    '''Get samples from a sampler with a given logpdf
-    :p0: Initial state for walkers
-    '''
+    Parameters
+    ----------
+    logpdf : callable
+        Log probability density function to sample from
+    p0 : ndarray, optional
+        Initial positions of walkers, shape (NWALKERS, NDIM)
+    steps : int, optional
+        Number of MCMC steps after burn-in, by default 5000
+
+    Returns
+    -------
+    ndarray
+        Flattened chain of MCMC samples, shape (steps * NWALKERS, NDIM)
+
+    Notes
+    -----
+    - Uses 100 steps burn-in period
+    - Default initial positions span mass=[9,10], SFR=[-1,0]
+    """
     if not p0:
         p0 = np.random.rand(NWALKERS, NDIM)  * np.array(((10-9), (0-(-1)))) + np.array((10, -0.5))
     sampler = emcee.EnsembleSampler(NWALKERS, NDIM, logpdf)
@@ -36,12 +53,27 @@ def get_samples(logpdf, p0=None, steps=5000,):
 
 
 def get_weighted_samples(host_galaxies, z_to_logpdf, nsamples_per_z=1000):
-    '''
-    :param z_to_logpdf: dict of z->logdpf function, to generate samples
-    :return: array of all samples - shape is (nfiltered, NSAMPLES_PER_Z * NWALKERS, 3)
-    each sample has 3 dimensiosn - mass, sfr, z
-    '''
+    """Generate MCMC samples for each host galaxy redshift.
 
+    Parameters
+    ----------
+    host_galaxies : pandas.DataFrame
+        DataFrame containing host galaxy data with 'z' column
+    z_to_logpdf : dict
+        Maps redshift to corresponding log PDF functions
+    nsamples_per_z : int, optional
+        Number of samples per redshift, by default 1000
+
+    Returns
+    -------
+    ndarray
+        Array of samples, shape (n_galaxies, nsamples_per_z * NWALKERS, 3)
+        Each sample contains (mass, sfr, redshift)
+
+    Notes
+    -----
+    Uses tqdm progress bar unless TQDM_DISABLE is True
+    """
     # create empty array to fill samples for each redshift
     all_samples = np.empty((len(host_galaxies), nsamples_per_z * NWALKERS, 3)) # each sample has 3 dimensions - mass,sfr,z
     
@@ -63,11 +95,27 @@ def get_weighted_samples(host_galaxies, z_to_logpdf, nsamples_per_z=1000):
 
 
 def calc_weighted_likelihood(z_to_logpdf, values):
-    '''
-    :z_to_logpdf: dict, redshift -> logpdf function
-    :values: list of (log10(mass), log10(sfr), redshift)
-    :return: the likelihood of values - sum(log(p(m_i,sfr_i,z_i))) for m_i,sfr_i,z_i in values
-    '''
+    """Calculate total log likelihood across multiple redshifts.
+
+    Parameters
+    ----------
+    z_to_logpdf : dict
+        Maps redshift to corresponding logpdf function
+    values : ndarray
+        Array of (mass, sfr, redshift) tuples, where:
+        - mass: log10(stellar mass)
+        - sfr: log10(star formation rate)
+        - redshift: host galaxy redshift
+
+    Returns
+    -------
+    float
+        Sum of log probabilities across all values
+
+    Notes
+    -----
+    Checks for out-of-bounds mass/SFR values and prints warning
+    """
     weighted_likelihood = 0
     for mass, sfr, z in values:
         logpdf = z_to_logpdf[z]
@@ -80,14 +128,26 @@ def calc_weighted_likelihood(z_to_logpdf, values):
 
 
 def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies):
-    '''
-    Calculate p-nominal value of given samples,
-    :samples: array of all samples with shape (number of host galaxies, NSAMPLES_PER_Z * NWALKERS, 3)
-              each sample has 3 dimensiosn - mass, sfr, z
-    :z_to_logpdf: dict redshift -> logpdf function
-    
-    :return: the probability of a a random set having lower weighted likelihood than the weighted likelihood of the given samples.
-    '''
+    """Calculate p-nominal value for MCMC samples.
+
+    Parameters
+    ----------
+    samples : ndarray
+        Array of shape (n_galaxies, n_samples, 3) containing:
+        - mass: log10(stellar mass)
+        - sfr: log10(star formation rate)
+        - redshift: host galaxy redshift
+    z_to_logpdf : dict
+        Maps redshift to corresponding logpdf function
+    host_galaxies : pandas.DataFrame
+        Host galaxy data containing Mstar and SFR columns
+
+    Returns
+    -------
+    float
+        Probability of random sample set having lower weighted 
+        likelihood than observed sample set
+    """
     hosts_values = np.vstack([np.log10(host_galaxies['Mstar']),
                               np.log10(host_galaxies['SFR']),
                               host_galaxies['z']])
@@ -107,38 +167,21 @@ def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies):
 
 def plot_from_samples(samples):
     """Plot density distribution of MCMC samples using Gaussian KDE.
-    
-    Creates a 2D density plot of mass-SFR samples using Gaussian kernel 
-    density estimation. The plot shows the probability density of the samples
-    with a color gradient.
 
     Parameters
     ----------
-    samples : numpy.ndarray
-        Array of shape (n_samples, 2) containing the MCMC samples.
-        First column should be masses, second column SFRs.
+    samples : ndarray
+        Array of shape (n_samples, 2) containing:
+        - mass: log10(stellar mass)
+        - sfr: log10(star formation rate)
 
     Returns
     -------
-    matplotlib.axes.Axes
-        The matplotlib axes object containing the plot for further customization.
-    numpy.ndarray
-        The 2D kernel density estimate array (shape: 100x100) representing
-        the probability density at each point in the mass-SFR grid.
-
-    Notes
-    -----
-    - Uses gaussian_kde from scipy.stats for density estimation
-    - Color scheme uses gist_earth_r colormap
-    - Plot is oriented with mass on x-axis and SFR on y-axis
-    - Density is estimated on a 100x100 grid
-    
-    Example
-    -------
-    >>> samples = get_samples()  # Shape (1000, 2)
-    >>> ax, density = plot_from_samples(samples)
-    >>> ax.set_xlabel('log Mass')
-    >>> plt.show()
+    tuple
+        (ax, Z, extent) where:
+        - ax: matplotlib Axes object
+        - Z: 2D array of KDE values
+        - extent: Plot limits [xmin, xmax, ymin, ymax]
     """
     m1 = samples[:,0]  # masses
     m2 = samples[:,1]  # SFRs

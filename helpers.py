@@ -3,14 +3,27 @@ import scipy.stats as stats
  
  
 def gen_values_w_halfnorms(host_galaxies, val_key, lowerr_key, uperr_key, n_vals=1000):
-    '''
-    param frbs: pandas DataFrame, the list of frbs
-    :param val_key: str, key name for the value (for example 'Mstar', 'SFR')
-    :param lowerr_key: str, key name of lower err
-    :param uperr_key: str, key name of up error
-    :param n_vals: int, total number of values to generate
-    return: list of generated values from a gaussian with uperr std on the right and lowerr std on the left
-    '''
+    """
+    Generate values from a Gaussian distribution with different standard deviations on the left and right sides.
+
+    Parameters
+    ----------
+    host_galaxies : pandas.DataFrame
+        The DataFrame containing host galaxy data.
+    val_key : str
+        The key name for the central value (e.g., 'Mstar', 'SFR').
+    lowerr_key : str
+        The key name for the lower error.
+    uperr_key : str
+        The key name for the upper error.
+    n_vals : int, optional
+        The total number of values to generate. Default is 1000.
+
+    Returns
+    -------
+    numpy.ndarray
+        A 2D array where each row contains the generated values for a host galaxy.
+    """
     sfr_values = np.ndarray((len(host_galaxies), n_vals))
 
     for i in host_galaxies.index:

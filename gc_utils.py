@@ -60,7 +60,7 @@ def plot_MGC_vs_Mstar():
 
 
 def get_gc_weighted_logpdf(logpdf):
-    ''' Wrapper for a simple logpdf function that returns "smart" likelihood function
+    ''' Wrapper for a simple logpdf function that returns weighted likelihood function
     :simple_logpdf: the logpdf fucntion (density of mass, sfr)
     :return a function f(m, sfr) -> ln(p(m,sfr) * m_gc(m))
     '''
