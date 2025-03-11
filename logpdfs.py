@@ -6,6 +6,7 @@ import sample_nf_probability_density as snpd
 
 # SFMS continuation constants
 MC_GAP = 0.3
+Z_CUTOFF = 0.25
 logphi = schechter.log_schechter
 
 
@@ -120,7 +121,7 @@ def get_logpdf(ztarget, prob_density, continuity=True):
 
     Notes:
     ----------
-    - The function uses a minimum redshift value of 0.25 for calculations.
+    - For z<Z_CUTOFF, the function assumes z=Z_CUTOFF for calculations.
     - The log-posterior function is created using a RectBivariateSpline interpolator over the mass and SFR grids.
     - The mass completeness threshold is determined using snpd.cosmos15_mass_completeness.
 
@@ -129,7 +130,7 @@ def get_logpdf(ztarget, prob_density, continuity=True):
     >>> logpdf_func = get_logpdf(0.5, prob_density)
     >>> logpdf_value = logpdf_func((10.5, 1.0))
     """
-    z_for_leja = ztarget if ztarget > 0.25 else 0.25
+    z_for_leja = ztarget if ztarget > Z_CUTOFF else Z_CUTOFF
     zidx = np.abs(snpd.zgrid - z_for_leja).argmin()
     density = prob_density[:, :, zidx]
     mthreshold = snpd.cosmos15_mass_completeness(z_for_leja)

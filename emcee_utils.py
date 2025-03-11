@@ -1,4 +1,3 @@
-''' emcee utils '''
 import emcee
 import random
 import numpy as np
