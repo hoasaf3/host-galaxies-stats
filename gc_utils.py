@@ -2,8 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-# TODO: add credit
-
 def Mstar_of_Mh(Mh):
     ''' Stellar Mass - Halo Mass function from Behroozi et al. (2019) '''
     M1 = 10**12.040
