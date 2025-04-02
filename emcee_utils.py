@@ -151,15 +151,15 @@ def calc_pnom_of_samples(samples, z_to_logpdf, host_galaxies):
                               np.log10(host_galaxies['SFR']),
                               host_galaxies['z']])
 
-    frb_weighted_likelihood = calc_weighted_likelihood(z_to_logpdf, hosts_values.T)
-    print('Likelihood of FRBs: ', frb_weighted_likelihood)
+    hosts_weighted_likelihood = calc_weighted_likelihood(z_to_logpdf, hosts_values.T)
+    print('Likelihood of host galaxies: ', hosts_weighted_likelihood)
     choices = [samples[:,i,:] for i in range(samples.shape[1])] # list of (ngalaxies,3) arrays
     
     # calc weighted likelihood for each tuple len(host_galaxies) samples
     weighted_likelihood = np.array([calc_weighted_likelihood(z_to_logpdf, c) for c in choices])
 
     ecdf_weighted_lklhd = ECDF(weighted_likelihood)
-    p_value = ecdf_weighted_lklhd(frb_weighted_likelihood)
+    p_value = ecdf_weighted_lklhd(hosts_weighted_likelihood)
 
     return p_value
 
