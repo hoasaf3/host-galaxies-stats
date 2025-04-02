@@ -9,7 +9,7 @@ Examples can be found in the [Examples notebook](examples.ipynb).
 For further usage examples, see the [Application to FRB hosts](frb_hosts_stats.ipynb)
 
 ## Contributing
-We welcome contributions! If you have suggestions for improvements or new features, feel free to open an issue or submit a pull request.
+We welcome contributions! Feel free to open an issue or submit a pull request.
 
 ## License
 This project is licensed under the MIT [License](LICENSE)
