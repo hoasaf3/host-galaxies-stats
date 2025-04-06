@@ -3,6 +3,9 @@
 This project provides tools for investigating the host-galaxy population of astrophysical transients.
 The paper describing this project can be found here [The Host Galaxies of Fast Radio Bursts Track a Combination of Stellar Mass and Star Formation](?)
 
+This framework uses a galaxy distribution trained with Prospector code (J. Leja et al. 2017; B. D. Johnson et al. 2021), hence it is limited to galaxies that have modeled with this code. The choice of other SED-modeling code might systematically affect the inferred galaxy properties (J. Leja et al. 2019, 2022).
+ 
+
 ## Examples
 
 Examples can be found in the [Examples notebook](examples.ipynb). 
