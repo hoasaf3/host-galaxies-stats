@@ -45,7 +45,7 @@ def lnprior_continuity(mass, sfr, mthreshold, ztarget):
     sfr : float
         Star formation rate in log10(M_solar/yr)
     mthreshold : float
-        Mass threshold at given redshift
+        Mass completeness threshold at given redshift
     ztarget : float
         Target redshift for determining slope
 
@@ -65,7 +65,7 @@ def lnprior_continuity(mass, sfr, mthreshold, ztarget):
     return 0, sfr
 
 
-def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget, continuity=False):
+def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget, continuity=False, redshift_evolution=True):
     """Compute total log-posterior (lnprior + lnlikelihood).
 
     Parameters
@@ -91,11 +91,18 @@ def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget, continuity=
     if continuity:
         prior, sfr_corrected = lnprior_continuity(mass, sfr, mthreshold, ztarget)
         if prior == -np.inf:
-            return -np.inf    
+            return -np.inf  # mass or SFR out of bounds    
         if prior != 0:
+            # mass < mthreshold + MC_GAP in lnprior_continuity
             mass = mthreshold + MC_GAP 
+        
+        if redshift_evolution and ztarget < Z_CUTOFF:
+            sfr_corrected += sfms_ridge(mass, ztarget) - sfms_ridge(mass, Z_CUTOFF)
+            prior += logphi(mass, Z_CUTOFF) - logphi(mass, ztarget)
+        
         likelihood = logpdf_interpolator(mass, sfr_corrected)[0]
         return prior + likelihood
+    
     else:
         prior = lnprior(mass, sfr, mthreshold)
         if prior == -np.inf:
@@ -104,7 +111,7 @@ def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget, continuity=
         return prior + likelihood
 
 
-def get_logpdf(ztarget, prob_density, continuity=True):
+def get_logpdf(ztarget, prob_density, continuity=True, redshift_evolution=True):
     """
     Return a log-posterior function for a given redshift and probability density.
     Supports optional continuity model.
@@ -142,7 +149,7 @@ def get_logpdf(ztarget, prob_density, continuity=True):
     def logposterior_function(theta):
         mass, sfr = theta
         return lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget,
-                           continuity)
+                           continuity, redshift_evolution)
 
     return logposterior_function
 
@@ -179,7 +186,9 @@ def get_weighted_logpdf(logpdf, a, b):
 
 
 def slope(z):
-    """Calculate star-forming main sequence slope from Leja 2020.
+    """Calculate star-forming main sequence slope for low masses (from Leja 2022).
+    Numbers are taken from Table 1 of Leja et al. 2022 for ridge mode, for parameter b.
+    The slope is calculated in Eq (10) of Leja et al. 2022
     
     Parameters
     ----------
@@ -189,14 +198,51 @@ def slope(z):
     Returns
     -------
     float
-        SFMS slope at given redshift using quadratic fit:
-        0.9387 + 0.004599*z - 0.02751*z^2
+        SFMS slope at given redshift using quadratic fit
     
     References
     ----------
     Leja et al. 2020
     """
-    return 0.9387 + 0.004599*z - 0.02751*z**2
+    return 0.9605 + 0.04990*z - 0.05984*z**2
+
+
+def calc_params(z):
+    """Calculate parameters for the SFMS ridge at a given redshift,
+    using Leja et al. 2022 Table 1 and Eq (10).
+    
+    Parameters
+    ----------
+    z : float
+        Redshift
+    
+    Returns
+    -------
+    tuple
+        (a, b, c, Mt) parameters for the SFMS ridge model
+    """
+    # Coefficients for the quadratic fit
+    coeffs = {
+        'a': (0.03746, 0.3448, -0.1156),
+        'b': (0.9605, 0.04990, -0.05984),
+        'c': (0.2516, 1.118, -0.2006),
+        'Mt': (10.22, 0.3826, -0.04491)
+    }
+    
+    return tuple(co[0] + co[1]*z + co[2]*z**2 for co in coeffs.values())
+
+
+def sfms_ridge(m, z):
+    """
+    Calculate the star-forming main sequence ridge at a given mass and redshift.
+    Using Leja et al. 2022 Table 1 for the parameters and"""
+    
+    a, b, c, Mt = calc_params(z)
+
+    if m > Mt:
+        return a * (m - Mt) + c
+    else:
+        return b * (m - Mt) + c
 
 
 def create_z_to_logpdf(host_galaxies, prob_density, a, b):
