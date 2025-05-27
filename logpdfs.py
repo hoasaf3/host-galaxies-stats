@@ -96,9 +96,10 @@ def lnposterior(mass, sfr, logpdf_interpolator, mthreshold, ztarget, continuity=
             # mass < mthreshold + MC_GAP in lnprior_continuity
             mass = mthreshold + MC_GAP 
         
+        # Redshift evolution. Only works when continuity=True
         if redshift_evolution and ztarget < Z_CUTOFF:
-            sfr_corrected += sfms_ridge(mass, ztarget) - sfms_ridge(mass, Z_CUTOFF)
-            prior += logphi(mass, Z_CUTOFF) - logphi(mass, ztarget)
+            sfr_corrected += sfms_ridge(mass, Z_CUTOFF) - sfms_ridge(mass, ztarget)
+            prior += logphi(mass, ztarget) - logphi(mass, Z_CUTOFF)
         
         likelihood = logpdf_interpolator(mass, sfr_corrected)[0]
         return prior + likelihood
@@ -121,6 +122,8 @@ def get_logpdf(ztarget, prob_density, continuity=True, redshift_evolution=True):
     prob_density (numpy.ndarray): 3D array representing the probability density over mass, SFR, and redshift.
                                     Obtained from snpd.sample_density.
     continuity (bool, optional): Whether to include continuity model prior. Default is True.
+    redshift_evolution (bool, optional): Whether to include redshift evolution in the continuity model. Default is True.
+                                         If continuity is false, redshift_evolution is ignored.
 
     Returns:
     ----------
@@ -140,7 +143,17 @@ def get_logpdf(ztarget, prob_density, continuity=True, redshift_evolution=True):
     z_for_leja = ztarget if ztarget > Z_CUTOFF else Z_CUTOFF
     zidx = np.abs(snpd.zgrid - z_for_leja).argmin()
     density = prob_density[:, :, zidx]
-    mthreshold = snpd.cosmos15_mass_completeness(z_for_leja)
+    
+    # From Leja et al. 2022 code:
+    # We use 3D-HST since 3D-HST covers 0.5 < z < 3 while
+    # COSMOS15 covers 0.2 < z < 0.8; in the overlap region,
+    # 3D-HST has a deeper mass-complete limit
+    if  0 <= ztarget < 0.5:
+        mthreshold = snpd.threedhst_mass_completeness(z_for_leja)
+    elif ztarget <= 3.0:
+        mthreshold = snpd.threedhst_mass_completeness(z_for_leja)
+    else:
+        raise ValueError("Redshift must be 0<=z<=3.0. Got ztarget = {}".format(ztarget))
 
     logpdf_interpolator = interpolate.RectBivariateSpline(
         snpd.mgrid, snpd.sfrgrid, np.log(density)
@@ -199,10 +212,6 @@ def slope(z):
     -------
     float
         SFMS slope at given redshift using quadratic fit
-    
-    References
-    ----------
-    Leja et al. 2020
     """
     return 0.9605 + 0.04990*z - 0.05984*z**2
 

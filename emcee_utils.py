@@ -201,8 +201,8 @@ def plot_from_samples(samples):
 
     _, ax = plt.subplots()
     ax.imshow(np.rot90(Z), cmap=plt.cm.gist_earth_r,
-              extent=extent, animated=True,
-              vmin=np.percentile(Z, 5), vmax=np.percentile(Z, 99))
+              extent=extent, animated=True,)
+            #   vmin=np.percentile(Z, 5), vmax=np.percentile(Z, 99))
     return ax, Z, extent
 
 
