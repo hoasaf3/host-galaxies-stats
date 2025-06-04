@@ -17,7 +17,7 @@ NSAMPLES_PER_Z = 1000  # Samples per redshift
 TQDM_DISABLE = False  # Flaf for disabling tqdm
 
 
-def get_samples(logpdf, p0=None, steps=5000):
+def get_samples(logpdf, p0=None, steps=5000, flat=True):
     """Generate MCMC samples using emcee sampler.
 
     Parameters
@@ -28,6 +28,8 @@ def get_samples(logpdf, p0=None, steps=5000):
         Initial positions of walkers, shape (NWALKERS, NDIM)
     steps : int, optional
         Number of MCMC steps after burn-in, by default 5000
+    flat : bool, optional
+        If True, return flattened samples, by default True
 
     Returns
     -------
@@ -47,8 +49,8 @@ def get_samples(logpdf, p0=None, steps=5000):
 
     # run sampler 5k times (x32 walkers)
     sampler.run_mcmc(state, steps)
-    samples = sampler.get_chain(flat=True)
-    return samples
+    samples = sampler.get_chain(flat=flat)
+    return samples  
 
 
 def get_weighted_samples(host_galaxies, z_to_logpdf, nsamples_per_z=1000):
@@ -199,7 +201,8 @@ def plot_from_samples(samples):
 
     _, ax = plt.subplots()
     ax.imshow(np.rot90(Z), cmap=plt.cm.gist_earth_r,
-              extent=extent, animated=True)
+              extent=extent, animated=True,)
+            #   vmin=np.percentile(Z, 5), vmax=np.percentile(Z, 99))
     return ax, Z, extent
 
 

@@ -1,4 +1,4 @@
-# Leja et al. 2020
+# Leja et al. 2020 Appendix B
 
 # Usage example:
 #
