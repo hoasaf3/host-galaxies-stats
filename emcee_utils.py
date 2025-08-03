@@ -249,12 +249,14 @@ def calc_p90(host_galaxies, z_to_logpdf, nominal_likelihood=None, n_vals=10000):
         
         random_values = []
         for i in host_galaxies.index:
-            mass = np.log10(random.choice(mass_values[i]))
             with np.errstate(invalid='ignore'):
                 sfr = np.log10(random.choice(sfr_values[i]))
                 while np.isnan(sfr) or sfr < sfrmin or sfr > sfrmax:
                     # retry if sfr_values[i]<0 or sfr not within plot range
                     sfr = np.log10(random.choice(sfr_values[i]))
+                mass = np.log10(random.choice(mass_values[i]))
+                while np.isnan(mass) or mass < mmin or mass > mmax:
+                    mass = np.log10(random.choice(mass_values[i]))
                 
             z = host_galaxies['z'][i]
             random_values.append([mass, sfr, z])
